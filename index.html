@@ -404,9 +404,9 @@
             </div>
             
             <div class="setting-group">
-                <label>📏 ВЫСОТА/ШИРИНА СТРОКИ</label>
-                <input type="number" id="rowHeightInput" step="0.01" min="0.2" max="50" value="5">
-                <div class="value-display" id="rowHeightValue">5.00 пикс</div>
+                <label>📏 ТОЛЩИНА СЛОЯ</label>
+                <input type="number" id="stepSizeInput" step="0.01" min="0.2" max="50" value="5">
+                <div class="value-display" id="stepSizeValue">5.00 пикс</div>
             </div>
         </div>
         
@@ -439,7 +439,6 @@
             const canvas = document.getElementById('viewfinderCanvas');
             const ctx = canvas.getContext('2d');
             const videoElement = document.getElementById('videoElement');
-            const scanContainer = document.getElementById('scanContainer');
             const captureBtn = document.getElementById('captureBtn');
             const resetBtn = document.getElementById('resetBtn');
             const saveBtn = document.getElementById('saveBtn');
@@ -453,10 +452,10 @@
             
             // Поля ввода
             const scanSpeedInput = document.getElementById('scanSpeedInput');
-            const rowHeightInput = document.getElementById('rowHeightInput');
+            const stepSizeInput = document.getElementById('stepSizeInput');
             const scanDirectionSelect = document.getElementById('scanDirection');
             const speedValue = document.getElementById('speedValue');
-            const rowHeightValue = document.getElementById('rowHeightValue');
+            const stepSizeValue = document.getElementById('stepSizeValue');
             
             // Состояние
             let videoStream = null;
@@ -470,8 +469,8 @@
             // Параметры
             let scanSpeed = 1.5;
             let stepSize = 5;
-            let scanDirection = 'vertical'; // 'vertical' или 'horizontal'
-            let currentLine = 0;
+            let scanDirection = 'vertical';
+            let currentPos = 0;
             let canvasWidth = 0;
             let canvasHeight = 0;
             let frozenBuffer = null;
@@ -485,19 +484,19 @@
             
             function updateDisplayValues() {
                 speedValue.textContent = `${scanSpeed.toFixed(2)} пикс/кадр`;
-                rowHeightValue.textContent = `${stepSize.toFixed(2)} пикс`;
+                stepSizeValue.textContent = `${stepSize.toFixed(2)} пикс`;
             }
             
             function updateParameters() {
                 scanSpeed = parseFloat(scanSpeedInput.value);
-                stepSize = parseFloat(rowHeightInput.value);
+                stepSize = parseFloat(stepSizeInput.value);
                 scanDirection = scanDirectionSelect.value;
                 if (isNaN(scanSpeed)) scanSpeed = 1.5;
                 if (isNaN(stepSize)) stepSize = 5;
                 scanSpeed = Math.max(0.1, Math.min(20, scanSpeed));
                 stepSize = Math.max(0.2, Math.min(50, stepSize));
                 scanSpeedInput.value = scanSpeed;
-                rowHeightInput.value = stepSize;
+                stepSizeInput.value = stepSize;
                 updateDisplayValues();
             }
             
@@ -509,11 +508,11 @@
                 updateDisplayValues();
             });
             
-            rowHeightInput.addEventListener('input', () => {
-                stepSize = parseFloat(rowHeightInput.value);
+            stepSizeInput.addEventListener('input', () => {
+                stepSize = parseFloat(stepSizeInput.value);
                 if (isNaN(stepSize)) stepSize = 5;
                 stepSize = Math.max(0.2, Math.min(50, stepSize));
-                rowHeightInput.value = stepSize;
+                stepSizeInput.value = stepSize;
                 updateDisplayValues();
             });
             
@@ -647,7 +646,7 @@
                 }
                 isScanning = false;
                 isScanComplete = false;
-                currentLine = 0;
+                currentPos = 0;
                 lastCapturedImage = null;
                 frozenBuffer = null;
                 scanIndicator.style.display = "none";
@@ -692,7 +691,7 @@
                     frozenBuffer.data[i+3] = 255;
                 }
                 
-                currentLine = 0;
+                currentPos = 0;
                 isScanning = true;
                 isScanComplete = false;
                 saveBtn.disabled = true;
@@ -715,11 +714,11 @@
                         tempCtx.drawImage(videoElement, 0, 0, width, height);
                         const currentFrame = tempCtx.getImageData(0, 0, width, height);
                         
-                        const nextPos = Math.min(currentLine + scanSpeed, maxPos);
+                        const nextPos = Math.min(currentPos + scanSpeed, maxPos);
                         
                         if (isVertical) {
-                            // Вертикальное сканирование (сверху вниз)
-                            for (let row = currentLine; row < nextPos; row++) {
+                            // Вертикальное сканирование (сверху вниз) - копируем строки
+                            for (let row = currentPos; row < nextPos; row++) {
                                 const rowStartFrozen = row * width * 4;
                                 const rowStartFrame = row * width * 4;
                                 for (let col = 0; col < width; col++) {
@@ -732,8 +731,8 @@
                                 }
                             }
                         } else {
-                            // Горизонтальное сканирование (слева направо)
-                            for (let col = currentLine; col < nextPos; col++) {
+                            // Горизонтальное сканирование (слева направо) - копируем столбцы
+                            for (let col = currentPos; col < nextPos; col++) {
                                 for (let row = 0; row < height; row++) {
                                     const frozenPos = (row * width + col) * 4;
                                     const framePos = (row * width + col) * 4;
@@ -745,69 +744,101 @@
                             }
                         }
                         
-                        currentLine = nextPos;
+                        currentPos = nextPos;
                         
-                        if (currentLine < maxPos) {
+                        if (currentPos < maxPos) {
+                            // Быстрая отрисовка через putImageData для обоих направлений
                             if (isVertical) {
-                                // Вертикальное сканирование
-                                // Замороженная часть (выше линии)
-                                for (let row = 0; row < currentLine; row++) {
-                                    const srcStart = row * width * 4;
-                                    const rowData = frozenBuffer.data.slice(srcStart, srcStart + width * 4);
-                                    const imageData = new ImageData(new Uint8ClampedArray(rowData), width, 1);
-                                    ctx.putImageData(imageData, 0, row);
+                                // Вертикальное - рисуем две части: замороженную (сверху) и живую (снизу)
+                                const frozenHeight = currentPos;
+                                const liveHeight = height - currentPos;
+                                
+                                if (frozenHeight > 0) {
+                                    const frozenPart = ctx.createImageData(width, frozenHeight);
+                                    for (let row = 0; row < frozenHeight; row++) {
+                                        const srcStart = row * width * 4;
+                                        const dstStart = row * width * 4;
+                                        for (let i = 0; i < width * 4; i++) {
+                                            frozenPart.data[dstStart + i] = frozenBuffer.data[srcStart + i];
+                                        }
+                                    }
+                                    ctx.putImageData(frozenPart, 0, 0);
                                 }
                                 
-                                // Живая часть (ниже линии)
-                                for (let row = currentLine; row < height; row++) {
-                                    const srcStart = row * width * 4;
-                                    const rowData = currentFrame.data.slice(srcStart, srcStart + width * 4);
-                                    const imageData = new ImageData(new Uint8ClampedArray(rowData), width, 1);
-                                    ctx.putImageData(imageData, 0, row);
+                                if (liveHeight > 0) {
+                                    const livePart = ctx.createImageData(width, liveHeight);
+                                    for (let row = currentPos; row < height; row++) {
+                                        const srcStart = row * width * 4;
+                                        const dstStart = (row - currentPos) * width * 4;
+                                        for (let col = 0; col < width; col++) {
+                                            const srcPos = srcStart + col * 4;
+                                            const dstPos = dstStart + col * 4;
+                                            livePart.data[dstPos] = currentFrame.data[srcPos];
+                                            livePart.data[dstPos+1] = currentFrame.data[srcPos+1];
+                                            livePart.data[dstPos+2] = currentFrame.data[srcPos+2];
+                                            livePart.data[dstPos+3] = 255;
+                                        }
+                                    }
+                                    ctx.putImageData(livePart, 0, currentPos);
                                 }
                                 
-                                // Горизонтальная линия сканирования
+                                // Горизонтальная линия
                                 ctx.beginPath();
-                                ctx.moveTo(0, currentLine);
-                                ctx.lineTo(width, currentLine);
+                                ctx.moveTo(0, currentPos);
+                                ctx.lineTo(width, currentPos);
                                 ctx.strokeStyle = '#ff3366';
                                 ctx.lineWidth = 4;
                                 ctx.stroke();
                                 ctx.fillStyle = 'rgba(255, 51, 102, 0.2)';
-                                ctx.fillRect(0, currentLine - 3, width, 6);
+                                ctx.fillRect(0, currentPos - 3, width, 6);
                             } else {
-                                // Горизонтальное сканирование
-                                // Замороженная часть (слева от линии)
-                                for (let col = 0; col < currentLine; col++) {
+                                // Горизонтальное - рисуем две части: замороженную (слева) и живую (справа)
+                                const frozenWidth = currentPos;
+                                const liveWidth = width - currentPos;
+                                
+                                if (frozenWidth > 0) {
+                                    const frozenPart = ctx.createImageData(frozenWidth, height);
                                     for (let row = 0; row < height; row++) {
-                                        const srcPos = (row * width + col) * 4;
-                                        const r = frozenBuffer.data[srcPos];
-                                        const g = frozenBuffer.data[srcPos+1];
-                                        const b = frozenBuffer.data[srcPos+2];
-                                        const a = frozenBuffer.data[srcPos+3];
-                                        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a/255})`;
-                                        ctx.fillRect(col, row, 1, 1);
+                                        const srcStart = row * width * 4;
+                                        const dstStart = row * frozenWidth * 4;
+                                        for (let col = 0; col < frozenWidth; col++) {
+                                            const srcPos = srcStart + col * 4;
+                                            const dstPos = dstStart + col * 4;
+                                            frozenPart.data[dstPos] = frozenBuffer.data[srcPos];
+                                            frozenPart.data[dstPos+1] = frozenBuffer.data[srcPos+1];
+                                            frozenPart.data[dstPos+2] = frozenBuffer.data[srcPos+2];
+                                            frozenPart.data[dstPos+3] = 255;
+                                        }
                                     }
+                                    ctx.putImageData(frozenPart, 0, 0);
                                 }
                                 
-                                // Живая часть (справа от линии)
-                                for (let col = currentLine; col < width; col++) {
+                                if (liveWidth > 0) {
+                                    const livePart = ctx.createImageData(liveWidth, height);
                                     for (let row = 0; row < height; row++) {
-                                        const srcPos = (row * width + col) * 4;
-                                        ctx.fillStyle = `rgba(${currentFrame.data[srcPos]}, ${currentFrame.data[srcPos+1]}, ${currentFrame.data[srcPos+2]}, ${currentFrame.data[srcPos+3]/255})`;
-                                        ctx.fillRect(col, row, 1, 1);
+                                        const srcStart = row * width * 4;
+                                        const dstStart = row * liveWidth * 4;
+                                        for (let col = currentPos; col < width; col++) {
+                                            const srcPos = srcStart + col * 4;
+                                            const dstPos = dstStart + (col - currentPos) * 4;
+                                            livePart.data[dstPos] = currentFrame.data[srcPos];
+                                            livePart.data[dstPos+1] = currentFrame.data[srcPos+1];
+                                            livePart.data[dstPos+2] = currentFrame.data[srcPos+2];
+                                            livePart.data[dstPos+3] = 255;
+                                        }
                                     }
+                                    ctx.putImageData(livePart, currentPos, 0);
                                 }
                                 
-                                // Вертикальная линия сканирования
+                                // Вертикальная линия
                                 ctx.beginPath();
-                                ctx.moveTo(currentLine, 0);
-                                ctx.lineTo(currentLine, height);
+                                ctx.moveTo(currentPos, 0);
+                                ctx.lineTo(currentPos, height);
                                 ctx.strokeStyle = '#ff3366';
                                 ctx.lineWidth = 4;
                                 ctx.stroke();
                                 ctx.fillStyle = 'rgba(255, 51, 102, 0.2)';
-                                ctx.fillRect(currentLine - 3, 0, 6, height);
+                                ctx.fillRect(currentPos - 3, 0, 6, height);
                             }
                             
                             animationId = requestAnimationFrame(scanFrame);
