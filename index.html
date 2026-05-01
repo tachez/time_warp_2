@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Time Warp Scan - Высокое разрешение</title>
+    <title>Time Warp Scan - Быстрое сканирование</title>
     <style>
         * {
             margin: 0;
@@ -435,15 +435,15 @@
         
         <div class="settings-row">
             <div class="setting-group">
-                <label>⚡ СКОРОСТЬ СКАНИРОВАНИЯ</label>
-                <input type="number" id="scanSpeedInput" step="0.01" min="0.1" max="20" value="1.5">
-                <div class="value-display" id="speedValue">1.5 пикс/кадр</div>
+                <label>⚡ СКОРОСТЬ СКАНИРОВАНИЯ (пикс/кадр)</label>
+                <input type="number" id="scanSpeedInput" step="1" min="1" max="50" value="8">
+                <div class="value-display" id="speedValue">8 пикс/кадр</div>
             </div>
             
             <div class="setting-group">
-                <label>📏 ТОЛЩИНА СЛОЯ</label>
-                <input type="number" id="stepSizeInput" step="0.01" min="0.2" max="50" value="5">
-                <div class="value-display" id="stepSizeValue">5.00 пикс</div>
+                <label>📏 ТОЛЩИНА СЛОЯ (пиксели)</label>
+                <input type="number" id="stepSizeInput" step="0.5" min="0.5" max="50" value="5">
+                <div class="value-display" id="stepSizeValue">5.0 пикс</div>
             </div>
         </div>
         
@@ -506,7 +506,7 @@
             let lastCapturedImage = null;
             
             // Параметры
-            let scanSpeed = 1.5;
+            let scanSpeed = 8;
             let stepSize = 5;
             let scanDirection = 'vertical';
             let currentPos = 0;
@@ -514,7 +514,6 @@
             let canvasHeight = 0;
             let frozenBuffer = null;
             let currentResolution = { width: 1920, height: 1080 };
-            let videoAspectRatio = 1;
             
             function showNotification(message, isError = false) {
                 notification.textContent = isError ? `❌ ${message}` : `✅ ${message}`;
@@ -524,27 +523,27 @@
             }
             
             function updateDisplayValues() {
-                speedValue.textContent = `${scanSpeed.toFixed(2)} пикс/кадр`;
-                stepSizeValue.textContent = `${stepSize.toFixed(2)} пикс`;
+                speedValue.textContent = `${scanSpeed} пикс/кадр`;
+                stepSizeValue.textContent = `${stepSize.toFixed(1)} пикс`;
             }
             
             function updateParameters() {
-                scanSpeed = parseFloat(scanSpeedInput.value);
+                scanSpeed = parseInt(scanSpeedInput.value);
                 stepSize = parseFloat(stepSizeInput.value);
                 scanDirection = scanDirectionSelect.value;
-                if (isNaN(scanSpeed)) scanSpeed = 1.5;
+                if (isNaN(scanSpeed)) scanSpeed = 8;
                 if (isNaN(stepSize)) stepSize = 5;
-                scanSpeed = Math.max(0.1, Math.min(20, scanSpeed));
-                stepSize = Math.max(0.2, Math.min(50, stepSize));
+                scanSpeed = Math.max(1, Math.min(50, scanSpeed));
+                stepSize = Math.max(0.5, Math.min(50, stepSize));
                 scanSpeedInput.value = scanSpeed;
                 stepSizeInput.value = stepSize;
                 updateDisplayValues();
             }
             
             scanSpeedInput.addEventListener('input', () => {
-                scanSpeed = parseFloat(scanSpeedInput.value);
-                if (isNaN(scanSpeed)) scanSpeed = 1.5;
-                scanSpeed = Math.max(0.1, Math.min(20, scanSpeed));
+                scanSpeed = parseInt(scanSpeedInput.value);
+                if (isNaN(scanSpeed)) scanSpeed = 8;
+                scanSpeed = Math.max(1, Math.min(50, scanSpeed));
                 scanSpeedInput.value = scanSpeed;
                 updateDisplayValues();
             });
@@ -552,7 +551,7 @@
             stepSizeInput.addEventListener('input', () => {
                 stepSize = parseFloat(stepSizeInput.value);
                 if (isNaN(stepSize)) stepSize = 5;
-                stepSize = Math.max(0.2, Math.min(50, stepSize));
+                stepSize = Math.max(0.5, Math.min(50, stepSize));
                 stepSizeInput.value = stepSize;
                 updateDisplayValues();
             });
@@ -575,7 +574,6 @@
                 canvas.height = canvasHeight;
             }
             
-            // Функция для отображения видео на canvas с правильным соотношением сторон
             function drawVideoToCanvas() {
                 if (!isScanning && !isScanComplete && videoElement && videoElement.readyState >= 2 && videoElement.videoWidth > 0 && canvasWidth > 0) {
                     try {
@@ -664,7 +662,6 @@
                     const actualWidth = videoElement.videoWidth;
                     const actualHeight = videoElement.videoHeight;
                     currentResolution = { width: actualWidth, height: actualHeight };
-                    videoAspectRatio = actualWidth / actualHeight;
                     resolutionInfo.innerHTML = `📷 Разрешение: ${actualWidth} x ${actualHeight}`;
                     
                     isCameraReady = true;
@@ -730,30 +727,6 @@
                 return tempCtx.getImageData(0, 0, currentResolution.width, currentResolution.height);
             }
             
-            function drawScanLineToCanvas(previewCanvas, previewCtx, previewWidth, previewHeight, currentPos, maxPos, isVertical, highResWidth, highResHeight) {
-                if (isVertical) {
-                    const lineY = (currentPos / maxPos) * previewHeight;
-                    previewCtx.beginPath();
-                    previewCtx.moveTo(0, lineY);
-                    previewCtx.lineTo(previewWidth, lineY);
-                    previewCtx.strokeStyle = '#ff3366';
-                    previewCtx.lineWidth = 4;
-                    previewCtx.stroke();
-                    previewCtx.fillStyle = 'rgba(255, 51, 102, 0.2)';
-                    previewCtx.fillRect(0, lineY - 3, previewWidth, 6);
-                } else {
-                    const lineX = (currentPos / maxPos) * previewWidth;
-                    previewCtx.beginPath();
-                    previewCtx.moveTo(lineX, 0);
-                    previewCtx.lineTo(lineX, previewHeight);
-                    previewCtx.strokeStyle = '#ff3366';
-                    previewCtx.lineWidth = 4;
-                    previewCtx.stroke();
-                    previewCtx.fillStyle = 'rgba(255, 51, 102, 0.2)';
-                    previewCtx.fillRect(lineX - 3, 0, 6, previewHeight);
-                }
-            }
-            
             function startTimeWarpScan() {
                 if (isScanning) {
                     updateStatus("⚠️ Сканирование уже идет");
@@ -772,7 +745,7 @@
                 const isVertical = scanDirection === 'vertical';
                 const maxPos = isVertical ? height : width;
                 
-                updateStatus(`🌀 СКАНИРОВАНИЕ... ${width}x${height} | ${scanDirection === 'vertical' ? 'сверху вниз' : 'слева направо'}`);
+                updateStatus(`🌀 СКАНИРОВАНИЕ... Скорость: ${scanSpeed} пикс/кадр | ${width}x${height}`);
                 scanIndicator.style.display = "block";
                 
                 const highResCanvas = document.createElement('canvas');
@@ -912,17 +885,36 @@
                             
                             const previewWidth = canvasWidth;
                             const previewHeight = canvasHeight;
-                            const highResWidth = width;
-                            const highResHeight = height;
-                            const scale = Math.min(previewWidth / highResWidth, previewHeight / highResHeight);
-                            const drawWidth = highResWidth * scale;
-                            const drawHeight = highResHeight * scale;
+                            const scale = Math.min(previewWidth / width, previewHeight / height);
+                            const drawWidth = width * scale;
+                            const drawHeight = height * scale;
                             const offsetX = (previewWidth - drawWidth) / 2;
                             const offsetY = (previewHeight - drawHeight) / 2;
                             
                             ctx.drawImage(highResCanvas, offsetX, offsetY, drawWidth, drawHeight);
                             
-                            drawScanLineToCanvas(ctx, canvasWidth, canvasHeight, currentPos, maxPos, isVertical, highResWidth, highResHeight);
+                            // Рисуем линию сканирования
+                            if (isVertical) {
+                                const lineY = (currentPos / maxPos) * previewHeight;
+                                ctx.beginPath();
+                                ctx.moveTo(0, lineY);
+                                ctx.lineTo(previewWidth, lineY);
+                                ctx.strokeStyle = '#ff3366';
+                                ctx.lineWidth = 4;
+                                ctx.stroke();
+                                ctx.fillStyle = 'rgba(255, 51, 102, 0.2)';
+                                ctx.fillRect(0, lineY - 3, previewWidth, 6);
+                            } else {
+                                const lineX = (currentPos / maxPos) * previewWidth;
+                                ctx.beginPath();
+                                ctx.moveTo(lineX, 0);
+                                ctx.lineTo(lineX, previewHeight);
+                                ctx.strokeStyle = '#ff3366';
+                                ctx.lineWidth = 4;
+                                ctx.stroke();
+                                ctx.fillStyle = 'rgba(255, 51, 102, 0.2)';
+                                ctx.fillRect(lineX - 3, 0, 6, previewHeight);
+                            }
                             
                             animationId = requestAnimationFrame(scanFrame);
                         } else {
@@ -957,30 +949,6 @@
                         animationId = null;
                         scanIndicator.style.display = "none";
                         updateStatus("❌ Ошибка сканирования", true);
-                    }
-                }
-                
-                function drawScanLineToCanvas(ctx, previewWidth, previewHeight, currentPos, maxPos, isVertical, highResWidth, highResHeight) {
-                    if (isVertical) {
-                        const lineY = (currentPos / maxPos) * previewHeight;
-                        ctx.beginPath();
-                        ctx.moveTo(0, lineY);
-                        ctx.lineTo(previewWidth, lineY);
-                        ctx.strokeStyle = '#ff3366';
-                        ctx.lineWidth = 4;
-                        ctx.stroke();
-                        ctx.fillStyle = 'rgba(255, 51, 102, 0.2)';
-                        ctx.fillRect(0, lineY - 3, previewWidth, 6);
-                    } else {
-                        const lineX = (currentPos / maxPos) * previewWidth;
-                        ctx.beginPath();
-                        ctx.moveTo(lineX, 0);
-                        ctx.lineTo(lineX, previewHeight);
-                        ctx.strokeStyle = '#ff3366';
-                        ctx.lineWidth = 4;
-                        ctx.stroke();
-                        ctx.fillStyle = 'rgba(255, 51, 102, 0.2)';
-                        ctx.fillRect(lineX - 3, 0, 6, previewHeight);
                     }
                 }
                 
