@@ -35,6 +35,9 @@
             bottom: 0;
             background: #000;
             overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
         canvas {
@@ -45,7 +48,7 @@
             height: 100%;
             display: block;
             background: #000;
-            object-fit: cover;
+            object-fit: contain;
         }
         
         #videoElement {
@@ -57,12 +60,6 @@
             opacity: 0;
             pointer-events: none;
             z-index: -1;
-        }
-        
-        /* Высокое качество для canvas */
-        canvas {
-            image-rendering: -webkit-optimize-contrast;
-            image-rendering: crisp-edges;
         }
         
         .floating-bar {
@@ -517,6 +514,7 @@
             let canvasHeight = 0;
             let frozenBuffer = null;
             let currentResolution = { width: 1920, height: 1080 };
+            let videoAspectRatio = 1;
             
             function showNotification(message, isError = false) {
                 notification.textContent = isError ? `❌ ${message}` : `✅ ${message}`;
@@ -570,38 +568,36 @@
             }
             
             function updateCanvasSize() {
-                // Для отображения используем размер экрана
-                canvasWidth = window.innerWidth;
-                canvasHeight = window.innerHeight;
-                canvas.style.width = '100%';
-                canvas.style.height = '100%';
+                const container = document.getElementById('scanContainer');
+                canvasWidth = container.clientWidth;
+                canvasHeight = container.clientHeight;
+                canvas.width = canvasWidth;
+                canvas.height = canvasHeight;
             }
             
-            // Функция для сохранения изображения в высоком разрешении
-            async function saveHighResImage() {
-                if (!lastCapturedImage) {
-                    showNotification("Нет сохранённого изображения", true);
-                    return;
-                }
-                
-                try {
-                    // Создаём ссылку для скачивания
-                    const link = document.createElement('a');
-                    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                    link.download = `timewarp_${currentResolution.width}x${currentResolution.height}_${scanDirection}_${timestamp}.png`;
-                    link.href = lastCapturedImage;
-                    link.click();
-                    showNotification(`Изображение ${currentResolution.width}x${currentResolution.height} сохранено!`);
-                } catch(e) {
-                    console.error("Save error:", e);
-                    showNotification("Ошибка сохранения", true);
-                }
-            }
-            
+            // Функция для отображения видео на canvas с правильным соотношением сторон
             function drawVideoToCanvas() {
                 if (!isScanning && !isScanComplete && videoElement && videoElement.readyState >= 2 && videoElement.videoWidth > 0 && canvasWidth > 0) {
                     try {
-                        ctx.drawImage(videoElement, 0, 0, canvasWidth, canvasHeight);
+                        const videoWidth = videoElement.videoWidth;
+                        const videoHeight = videoElement.videoHeight;
+                        const videoAspect = videoWidth / videoHeight;
+                        const canvasAspect = canvasWidth / canvasHeight;
+                        
+                        let drawWidth, drawHeight, offsetX = 0, offsetY = 0;
+                        
+                        if (videoAspect > canvasAspect) {
+                            drawWidth = canvasWidth;
+                            drawHeight = canvasWidth / videoAspect;
+                            offsetY = (canvasHeight - drawHeight) / 2;
+                        } else {
+                            drawHeight = canvasHeight;
+                            drawWidth = canvasHeight * videoAspect;
+                            offsetX = (canvasWidth - drawWidth) / 2;
+                        }
+                        
+                        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+                        ctx.drawImage(videoElement, offsetX, offsetY, drawWidth, drawHeight);
                     } catch(e) {
                         console.log("Draw error:", e);
                     }
@@ -627,18 +623,16 @@
                 videoElement.pause();
                 videoElement.srcObject = null;
                 
-                // Получаем выбранное разрешение
                 const resolution = parseResolution(resolutionSelect.value);
                 currentResolution = resolution;
                 
                 updateStatus(`📷 Запрос ${facingMode === 'user' ? 'фронтальной' : 'основной'} камеры (${resolution.width}x${resolution.height})...`);
                 
                 try {
-                    // Запрашиваем камеру с высоким разрешением
                     const constraints = {
                         video: {
-                            width: { ideal: resolution.width, min: 640, max: resolution.width },
-                            height: { ideal: resolution.height, min: 480, max: resolution.height },
+                            width: { ideal: resolution.width, min: 640 },
+                            height: { ideal: resolution.height, min: 480 },
                             facingMode: facingMode
                         }
                     };
@@ -667,10 +661,10 @@
                         });
                     });
                     
-                    // Получаем фактическое разрешение видео
                     const actualWidth = videoElement.videoWidth;
                     const actualHeight = videoElement.videoHeight;
                     currentResolution = { width: actualWidth, height: actualHeight };
+                    videoAspectRatio = actualWidth / actualHeight;
                     resolutionInfo.innerHTML = `📷 Разрешение: ${actualWidth} x ${actualHeight}`;
                     
                     isCameraReady = true;
@@ -689,7 +683,6 @@
                 } catch (err) {
                     console.error("Camera error:", err);
                     
-                    // Пробуем с меньшим разрешением
                     if (resolution.width > 1280) {
                         updateStatus("⚠️ Высокое разрешение недоступно, пробуем HD...");
                         resolutionSelect.value = "1280x720";
@@ -728,7 +721,6 @@
                 drawVideoToCanvas();
             }
             
-            // Функция для получения текущего кадра в высоком разрешении
             function getHighResFrame() {
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = currentResolution.width;
@@ -736,6 +728,30 @@
                 const tempCtx = tempCanvas.getContext('2d');
                 tempCtx.drawImage(videoElement, 0, 0, currentResolution.width, currentResolution.height);
                 return tempCtx.getImageData(0, 0, currentResolution.width, currentResolution.height);
+            }
+            
+            function drawScanLineToCanvas(previewCanvas, previewCtx, previewWidth, previewHeight, currentPos, maxPos, isVertical, highResWidth, highResHeight) {
+                if (isVertical) {
+                    const lineY = (currentPos / maxPos) * previewHeight;
+                    previewCtx.beginPath();
+                    previewCtx.moveTo(0, lineY);
+                    previewCtx.lineTo(previewWidth, lineY);
+                    previewCtx.strokeStyle = '#ff3366';
+                    previewCtx.lineWidth = 4;
+                    previewCtx.stroke();
+                    previewCtx.fillStyle = 'rgba(255, 51, 102, 0.2)';
+                    previewCtx.fillRect(0, lineY - 3, previewWidth, 6);
+                } else {
+                    const lineX = (currentPos / maxPos) * previewWidth;
+                    previewCtx.beginPath();
+                    previewCtx.moveTo(lineX, 0);
+                    previewCtx.lineTo(lineX, previewHeight);
+                    previewCtx.strokeStyle = '#ff3366';
+                    previewCtx.lineWidth = 4;
+                    previewCtx.stroke();
+                    previewCtx.fillStyle = 'rgba(255, 51, 102, 0.2)';
+                    previewCtx.fillRect(lineX - 3, 0, 6, previewHeight);
+                }
             }
             
             function startTimeWarpScan() {
@@ -759,13 +775,11 @@
                 updateStatus(`🌀 СКАНИРОВАНИЕ... ${width}x${height} | ${scanDirection === 'vertical' ? 'сверху вниз' : 'слева направо'}`);
                 scanIndicator.style.display = "block";
                 
-                // Создаём canvas для высокого разрешения
                 const highResCanvas = document.createElement('canvas');
                 highResCanvas.width = width;
                 highResCanvas.height = height;
                 const highResCtx = highResCanvas.getContext('2d');
                 
-                // Создаём буфер для замороженных строк/столбцов
                 frozenBuffer = highResCtx.createImageData(width, height);
                 for (let i = 0; i < frozenBuffer.data.length; i += 4) {
                     frozenBuffer.data[i] = 0;
@@ -790,13 +804,10 @@
                             return;
                         }
                         
-                        // Получаем текущий кадр в высоком разрешении
                         const currentFrame = getHighResFrame();
-                        
                         const nextPos = Math.min(currentPos + scanSpeed, maxPos);
                         
                         if (isVertical) {
-                            // Вертикальное сканирование - копируем строки
                             for (let row = currentPos; row < nextPos; row++) {
                                 const rowStartFrozen = row * width * 4;
                                 const rowStartFrame = row * width * 4;
@@ -810,7 +821,6 @@
                                 }
                             }
                         } else {
-                            // Горизонтальное сканирование - копируем столбцы
                             for (let col = currentPos; col < nextPos; col++) {
                                 for (let row = 0; row < height; row++) {
                                     const frozenPos = (row * width + col) * 4;
@@ -826,9 +836,7 @@
                         currentPos = nextPos;
                         
                         if (currentPos < maxPos) {
-                            // Отрисовка на высококачественном canvas
                             if (isVertical) {
-                                // Вертикальное - рисуем две части
                                 const frozenHeight = currentPos;
                                 const liveHeight = height - currentPos;
                                 
@@ -861,7 +869,6 @@
                                     highResCtx.putImageData(livePart, 0, currentPos);
                                 }
                             } else {
-                                // Горизонтальное - рисуем две части
                                 const frozenWidth = currentPos;
                                 const liveWidth = width - currentPos;
                                 
@@ -900,43 +907,31 @@
                                 }
                             }
                             
-                            // Обновляем отображение на экране (масштабируем для предпросмотра)
+                            // Обновляем preview canvas
                             ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-                            ctx.drawImage(highResCanvas, 0, 0, canvasWidth, canvasHeight);
                             
-                            // Рисуем линию сканирования на экране
-                            if (isVertical) {
-                                const lineY = (currentPos / height) * canvasHeight;
-                                ctx.beginPath();
-                                ctx.moveTo(0, lineY);
-                                ctx.lineTo(canvasWidth, lineY);
-                                ctx.strokeStyle = '#ff3366';
-                                ctx.lineWidth = 4;
-                                ctx.stroke();
-                                ctx.fillStyle = 'rgba(255, 51, 102, 0.2)';
-                                ctx.fillRect(0, lineY - 3, canvasWidth, 6);
-                            } else {
-                                const lineX = (currentPos / width) * canvasWidth;
-                                ctx.beginPath();
-                                ctx.moveTo(lineX, 0);
-                                ctx.lineTo(lineX, canvasHeight);
-                                ctx.strokeStyle = '#ff3366';
-                                ctx.lineWidth = 4;
-                                ctx.stroke();
-                                ctx.fillStyle = 'rgba(255, 51, 102, 0.2)';
-                                ctx.fillRect(lineX - 3, 0, 6, canvasHeight);
-                            }
+                            const previewWidth = canvasWidth;
+                            const previewHeight = canvasHeight;
+                            const highResWidth = width;
+                            const highResHeight = height;
+                            const scale = Math.min(previewWidth / highResWidth, previewHeight / highResHeight);
+                            const drawWidth = highResWidth * scale;
+                            const drawHeight = highResHeight * scale;
+                            const offsetX = (previewWidth - drawWidth) / 2;
+                            const offsetY = (previewHeight - drawHeight) / 2;
+                            
+                            ctx.drawImage(highResCanvas, offsetX, offsetY, drawWidth, drawHeight);
+                            
+                            drawScanLineToCanvas(ctx, canvasWidth, canvasHeight, currentPos, maxPos, isVertical, highResWidth, highResHeight);
                             
                             animationId = requestAnimationFrame(scanFrame);
                         } else {
-                            // Сканирование завершено
                             highResCtx.putImageData(frozenBuffer, 0, 0);
                             isScanning = false;
                             isScanComplete = true;
                             animationId = null;
                             scanIndicator.style.display = "none";
                             
-                            // Сохраняем изображение в высоком разрешении
                             try {
                                 lastCapturedImage = highResCanvas.toDataURL('image/png');
                                 saveBtn.disabled = false;
@@ -946,9 +941,15 @@
                                 updateStatus("✅ Сканирование завершено");
                             }
                             
-                            // Показываем финальный результат на экране
                             ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-                            ctx.drawImage(highResCanvas, 0, 0, canvasWidth, canvasHeight);
+                            const previewWidth = canvasWidth;
+                            const previewHeight = canvasHeight;
+                            const scale = Math.min(previewWidth / width, previewHeight / height);
+                            const drawWidth = width * scale;
+                            const drawHeight = height * scale;
+                            const offsetX = (previewWidth - drawWidth) / 2;
+                            const offsetY = (previewHeight - drawHeight) / 2;
+                            ctx.drawImage(highResCanvas, offsetX, offsetY, drawWidth, drawHeight);
                         }
                     } catch(e) {
                         console.error("Scan error:", e);
@@ -956,6 +957,30 @@
                         animationId = null;
                         scanIndicator.style.display = "none";
                         updateStatus("❌ Ошибка сканирования", true);
+                    }
+                }
+                
+                function drawScanLineToCanvas(ctx, previewWidth, previewHeight, currentPos, maxPos, isVertical, highResWidth, highResHeight) {
+                    if (isVertical) {
+                        const lineY = (currentPos / maxPos) * previewHeight;
+                        ctx.beginPath();
+                        ctx.moveTo(0, lineY);
+                        ctx.lineTo(previewWidth, lineY);
+                        ctx.strokeStyle = '#ff3366';
+                        ctx.lineWidth = 4;
+                        ctx.stroke();
+                        ctx.fillStyle = 'rgba(255, 51, 102, 0.2)';
+                        ctx.fillRect(0, lineY - 3, previewWidth, 6);
+                    } else {
+                        const lineX = (currentPos / maxPos) * previewWidth;
+                        ctx.beginPath();
+                        ctx.moveTo(lineX, 0);
+                        ctx.lineTo(lineX, previewHeight);
+                        ctx.strokeStyle = '#ff3366';
+                        ctx.lineWidth = 4;
+                        ctx.stroke();
+                        ctx.fillStyle = 'rgba(255, 51, 102, 0.2)';
+                        ctx.fillRect(lineX - 3, 0, 6, previewHeight);
                     }
                 }
                 
@@ -972,7 +997,6 @@
                 settingsPanel.classList.toggle('open');
             }
             
-            // Обработчики
             captureBtn.addEventListener('click', () => {
                 if (!isCameraReady) {
                     updateStatus("⏳ Сначала включите камеру в настройках");
@@ -982,7 +1006,23 @@
             });
             
             resetBtn.addEventListener('click', resetScan);
-            saveBtn.addEventListener('click', saveHighResImage);
+            saveBtn.addEventListener('click', () => {
+                if (!lastCapturedImage) {
+                    showNotification("Нет сохранённого изображения", true);
+                    return;
+                }
+                try {
+                    const link = document.createElement('a');
+                    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                    link.download = `timewarp_${currentResolution.width}x${currentResolution.height}_${scanDirection}_${timestamp}.png`;
+                    link.href = lastCapturedImage;
+                    link.click();
+                    showNotification(`Изображение ${currentResolution.width}x${currentResolution.height} сохранено!`);
+                } catch(e) {
+                    showNotification("Ошибка сохранения", true);
+                }
+            });
+            
             enableCameraFrontBtn.addEventListener('click', () => initCamera('user'));
             enableCameraBackBtn.addEventListener('click', () => initCamera('environment'));
             settingsToggle.addEventListener('click', toggleSettings);
@@ -1004,7 +1044,15 @@
                     drawVideoToCanvas();
                 } else if (isScanComplete && lastCapturedImage) {
                     const img = new Image();
-                    img.onload = () => ctx.drawImage(img, 0, 0, canvasWidth, canvasHeight);
+                    img.onload = () => {
+                        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+                        const scale = Math.min(canvasWidth / img.width, canvasHeight / img.height);
+                        const drawWidth = img.width * scale;
+                        const drawHeight = img.height * scale;
+                        const offsetX = (canvasWidth - drawWidth) / 2;
+                        const offsetY = (canvasHeight - drawHeight) / 2;
+                        ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+                    };
                     img.src = lastCapturedImage;
                 }
             }
@@ -1020,7 +1068,6 @@
                 if (animationId) cancelAnimationFrame(animationId);
             });
             
-            // Инициализация
             updateCanvasSize();
             updateDisplayValues();
             startRenderLoop();
@@ -1028,7 +1075,7 @@
             updateStatus("📱 Нажмите '⚙️' и выберите камеру");
             
             setInterval(() => {
-                if (!isScanning && !isScanComplete && (canvasWidth !== window.innerWidth || canvasHeight !== window.innerHeight)) {
+                if (!isScanning && !isScanComplete && (canvasWidth !== document.getElementById('scanContainer').clientWidth)) {
                     updateCanvasSize();
                 }
             }, 500);
