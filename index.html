@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Time Warp Scan - iOS Fix</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            background: #000;
+            font-family: system-ui, 'Segoe UI', 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden;
+        }
+        
+        .scan-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #000;
+            overflow: hidden;
+        }
+        
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: block;
+            background: #000;
+            object-fit: cover;
+        }
+        
+        #videoElement {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+            z-index: -1;
+        }
+        
+        .floating-bar {
+            position: fixed;
+            bottom: 30px;
+            left: 0;
+            right: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            z-index: 150;
+            padding: 0 20px;
+            pointer-events: none;
+        }
+        
+        .floating-btn {
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            font-size: 1.6rem;
+            padding: 0;
+            border-radius: 60px;
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            -webkit-tap-highlight-color: transparent;
+            pointer-events: auto;
+        }
+        
+        .floating-btn:active {
+            transform: scale(0.94);
+            background: rgba(0, 0, 0, 0.9);
+        }
+        
+        .floating-btn.reset-btn {
+            background: rgba(47, 53, 66, 0.85);
+        }
+        
+        .floating-btn.save-btn {
+            background: rgba(46, 204, 113, 0.85);
+        }
+        
+        .floating-btn.warp-btn {
+            background: rgba(255, 71, 87, 0.85);
+        }
+        
+        .floating-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .settings-toggle {
+            position: fixed;
+            bottom: 30px;
+            left: 20px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: white;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 160;
+            transition: all 0.2s;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .settings-toggle:active {
+            transform: scale(0.92);
+        }
+        
+        .settings-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 25px 25px 0 0;
+            padding: 20px 20px 30px;
+            z-index: 140;
+            transform: translateY(100%);
+            transition: transform 0.3s ease-out;
+            border-top: 1px solid rgba(255,255,255,0.2);
+            max-height: 65vh;
+            overflow-y: auto;
+        }
+        
+        .settings-panel.open {
+            transform: translateY(0);
+        }
+        
+        .settings-title {
+            color: white;
+            font-size: 1rem;
+            margin-bottom: 15px;
+            text-align: center;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+        
+        .settings-row {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        
+        .setting-group {
+            flex: 1;
+            min-width: 140px;
+            background: rgba(255,255,255,0.1);
+            padding: 12px;
+            border-radius: 16px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .setting-group label {
+            display: block;
+            color: #fff;
+            font-size: 0.7rem;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        
+        .setting-group input, .setting-group select {
+            width: 100%;
+            background: rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.3);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-family: monospace;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        
+        .setting-group select option {
+            background: #1a1a2e;
+        }
+        
+        .value-display {
+            font-size: 0.6rem;
+            color: #ff4757;
+            margin-top: 4px;
+            text-align: right;
+            font-family: monospace;
+        }
+        
+        .settings-buttons {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        .settings-btn {
+            background: #ff4757;
+            border: none;
+            color: white;
+            font-size: 0.85rem;
+            font-weight: bold;
+            padding: 12px 20px;
+            border-radius: 40px;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex: 1;
+            min-width: 110px;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .settings-btn:active {
+            transform: scale(0.97);
+        }
+        
+        .settings-btn.camera-settings-btn {
+            background: #3498db;
+        }
+        
+        .status {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            color: #fff;
+            font-size: 0.8rem;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(10px);
+            padding: 8px 18px;
+            border-radius: 40px;
+            z-index: 100;
+            font-weight: 500;
+            pointer-events: none;
+            white-space: nowrap;
+            border: 1px solid rgba(255,255,255,0.2);
+            max-width: 90%;
+        }
+        
+        .scan-indicator {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255,51,102,0.4) 0%, rgba(255,51,102,0) 70%);
+            pointer-events: none;
+            z-index: 50;
+            animation: pulse 1s ease-in-out infinite;
+            display: none;
+        }
+        
+        .notification {
+            position: fixed;
+            top: 100px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-20px);
+            background: rgba(46, 204, 113, 0.95);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 40px;
+            font-size: 0.85rem;
+            font-weight: bold;
+            z-index: 200;
+            opacity: 0;
+            transition: all 0.3s;
+            pointer-events: none;
+            white-space: nowrap;
+            backdrop-filter: blur(10px);
+        }
+        
+        .notification.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 0.8; transform: translate(-50%, -50%) scale(1); }
+            50% { opacity: 0.3; transform: translate(-50%, -50%) scale(1.2); }
+        }
+        
+        @media (min-width: 768px) {
+            .settings-toggle {
+                left: 30px;
+                bottom: 30px;
+            }
+            
+            .floating-bar {
+                bottom: 30px;
+                gap: 25px;
+            }
+            
+            .floating-btn {
+                width: 65px;
+                height: 65px;
+                font-size: 1.8rem;
+            }
+        }
+        
+        @media (max-width: 767px) {
+            .floating-btn {
+                width: 55px;
+                height: 55px;
+                font-size: 1.4rem;
+            }
+            
+            .floating-bar {
+                gap: 15px;
+                bottom: 25px;
+            }
+            
+            .settings-toggle {
+                width: 45px;
+                height: 45px;
+                font-size: 22px;
+                bottom: 25px;
+                left: 15px;
+            }
+            
+            .status {
+                font-size: 0.7rem;
+                top: 15px;
+                white-space: normal;
+                max-width: 85%;
+            }
+            
+            .notification {
+                top: 80px;
+                font-size: 0.75rem;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .floating-btn {
+                width: 50px;
+                height: 50px;
+                font-size: 1.3rem;
+            }
+            
+            .floating-bar {
+                gap: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="scan-container" id="scanContainer">
+        <canvas id="viewfinderCanvas"></canvas>
+    </div>
+    
+    <video id="videoElement" autoplay playsinline muted></video>
+    
+    <div class="status" id="statusMsg">📱 Нажмите "⚙️" и выберите камеру</div>
+    <div id="scanIndicator" class="scan-indicator"></div>
+    <div id="notification" class="notification">✅ Готово!</div>
+    
+    <div class="settings-toggle" id="settingsToggle">⚙️</div>
+    
+    <div class="settings-panel" id="settingsPanel">
+        <div class="settings-title">⚙️ НАСТРОЙКИ</div>
+        
+        <div class="settings-row">
+            <div class="setting-group">
+                <label>⚡ СКОРОСТЬ СКАНИРОВАНИЯ</label>
+                <input type="number" id="scanSpeedInput" step="0.01" min="0.1" max="20" value="1.5">
+                <div class="value-display" id="speedValue">1.5 пикс/кадр</div>
+            </div>
+            
+            <div class="setting-group">
+                <label>📏 ВЫСОТА/ШИРИНА СТРОКИ</label>
+                <input type="number" id="rowHeightInput" step="0.01" min="0.2" max="50" value="5">
+                <div class="value-display" id="rowHeightValue">5.00 пикс</div>
+            </div>
+        </div>
+        
+        <div class="settings-row">
+            <div class="setting-group">
+                <label>🔁 НАПРАВЛЕНИЕ СКАНИРОВАНИЯ</label>
+                <select id="scanDirection">
+                    <option value="vertical">⬇️ СВЕРХУ ВНИЗ</option>
+                    <option value="horizontal">➡️ СЛЕВА НАПРАВО</option>
+                </select>
+                <div class="value-display">выберите направление</div>
+            </div>
+        </div>
+        
+        <div class="settings-buttons">
+            <button id="enableCameraFrontBtn" class="settings-btn camera-settings-btn">🤳 ФРОНТАЛЬНАЯ</button>
+            <button id="enableCameraBackBtn" class="settings-btn camera-settings-btn">📷 ОСНОВНАЯ</button>
+        </div>
+    </div>
+    
+    <div class="floating-bar">
+        <button id="captureBtn" class="floating-btn warp-btn" disabled>🌀</button>
+        <button id="saveBtn" class="floating-btn save-btn" disabled>💾</button>
+        <button id="resetBtn" class="floating-btn reset-btn" disabled>⟳</button>
+    </div>
+
+    <script>
+        (function() {
+            // Элементы
+            const canvas = document.getElementById('viewfinderCanvas');
+            const ctx = canvas.getContext('2d');
+            const videoElement = document.getElementById('videoElement');
+            const scanContainer = document.getElementById('scanContainer');
+            const captureBtn = document.getElementById('captureBtn');
+            const resetBtn = document.getElementById('resetBtn');
+            const saveBtn = document.getElementById('saveBtn');
+            const enableCameraFrontBtn = document.getElementById('enableCameraFrontBtn');
+            const enableCameraBackBtn = document.getElementById('enableCameraBackBtn');
+            const settingsToggle = document.getElementById('settingsToggle');
+            const settingsPanel = document.getElementById('settingsPanel');
+            const statusDiv = document.getElementById('statusMsg');
+            const scanIndicator = document.getElementById('scanIndicator');
+            const notification = document.getElementById('notification');
+            
+            // Поля ввода
+            const scanSpeedInput = document.getElementById('scanSpeedInput');
+            const rowHeightInput = document.getElementById('rowHeightInput');
+            const scanDirectionSelect = document.getElementById('scanDirection');
+            const speedValue = document.getElementById('speedValue');
+            const rowHeightValue = document.getElementById('rowHeightValue');
+            
+            // Состояние
+            let videoStream = null;
+            let isScanning = false;
+            let isScanComplete = false;
+            let animationId = null;
+            let renderAnimationId = null;
+            let isCameraReady = false;
+            let lastCapturedImage = null;
+            
+            // Параметры
+            let scanSpeed = 1.5;
+            let stepSize = 5;
+            let scanDirection = 'vertical'; // 'vertical' или 'horizontal'
+            let currentLine = 0;
+            let canvasWidth = 0;
+            let canvasHeight = 0;
+            let frozenBuffer = null;
+            
+            function showNotification(message, isError = false) {
+                notification.textContent = isError ? `❌ ${message}` : `✅ ${message}`;
+                notification.style.background = isError ? 'rgba(231, 76, 60, 0.95)' : 'rgba(46, 204, 113, 0.95)';
+                notification.classList.add('show');
+                setTimeout(() => notification.classList.remove('show'), 2000);
+            }
+            
+            function updateDisplayValues() {
+                speedValue.textContent = `${scanSpeed.toFixed(2)} пикс/кадр`;
+                rowHeightValue.textContent = `${stepSize.toFixed(2)} пикс`;
+            }
+            
+            function updateParameters() {
+                scanSpeed = parseFloat(scanSpeedInput.value);
+                stepSize = parseFloat(rowHeightInput.value);
+                scanDirection = scanDirectionSelect.value;
+                if (isNaN(scanSpeed)) scanSpeed = 1.5;
+                if (isNaN(stepSize)) stepSize = 5;
+                scanSpeed = Math.max(0.1, Math.min(20, scanSpeed));
+                stepSize = Math.max(0.2, Math.min(50, stepSize));
+                scanSpeedInput.value = scanSpeed;
+                rowHeightInput.value = stepSize;
+                updateDisplayValues();
+            }
+            
+            scanSpeedInput.addEventListener('input', () => {
+                scanSpeed = parseFloat(scanSpeedInput.value);
+                if (isNaN(scanSpeed)) scanSpeed = 1.5;
+                scanSpeed = Math.max(0.1, Math.min(20, scanSpeed));
+                scanSpeedInput.value = scanSpeed;
+                updateDisplayValues();
+            });
+            
+            rowHeightInput.addEventListener('input', () => {
+                stepSize = parseFloat(rowHeightInput.value);
+                if (isNaN(stepSize)) stepSize = 5;
+                stepSize = Math.max(0.2, Math.min(50, stepSize));
+                rowHeightInput.value = stepSize;
+                updateDisplayValues();
+            });
+            
+            scanDirectionSelect.addEventListener('change', () => {
+                scanDirection = scanDirectionSelect.value;
+                updateStatus(`Направление: ${scanDirection === 'vertical' ? 'сверху вниз' : 'слева направо'}`);
+            });
+            
+            function updateCanvasSize() {
+                canvasWidth = window.innerWidth;
+                canvasHeight = window.innerHeight;
+                canvas.width = canvasWidth;
+                canvas.height = canvasHeight;
+            }
+            
+            function drawVideoToCanvas() {
+                if (!isScanning && !isScanComplete && videoElement && videoElement.readyState >= 2 && videoElement.videoWidth > 0 && canvasWidth > 0) {
+                    try {
+                        ctx.drawImage(videoElement, 0, 0, canvasWidth, canvasHeight);
+                    } catch(e) {
+                        console.log("Draw error:", e);
+                    }
+                }
+            }
+            
+            function startRenderLoop() {
+                if (renderAnimationId) cancelAnimationFrame(renderAnimationId);
+                
+                function render() {
+                    drawVideoToCanvas();
+                    renderAnimationId = requestAnimationFrame(render);
+                }
+                render();
+            }
+            
+            async function initCamera(facingMode) {
+                if (videoStream) {
+                    videoStream.getTracks().forEach(track => track.stop());
+                    videoStream = null;
+                }
+                
+                videoElement.pause();
+                videoElement.srcObject = null;
+                
+                updateStatus(`📷 Запрос ${facingMode === 'user' ? 'фронтальной' : 'основной'} камеры...`);
+                
+                try {
+                    const constraints = {
+                        video: {
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 },
+                            facingMode: facingMode
+                        }
+                    };
+                    
+                    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    videoStream = stream;
+                    videoElement.srcObject = stream;
+                    videoElement.setAttribute('playsinline', true);
+                    videoElement.setAttribute('autoplay', true);
+                    videoElement.muted = true;
+                    
+                    await new Promise((resolve) => {
+                        const checkVideo = () => {
+                            if (videoElement.readyState >= 2 && videoElement.videoWidth > 0) {
+                                console.log(`Video ready: ${videoElement.videoWidth}x${videoElement.videoHeight}`);
+                                resolve();
+                            } else {
+                                setTimeout(checkVideo, 100);
+                            }
+                        };
+                        videoElement.play().then(() => {
+                            checkVideo();
+                        }).catch(e => {
+                            console.log("Play error:", e);
+                            checkVideo();
+                        });
+                    });
+                    
+                    isCameraReady = true;
+                    captureBtn.disabled = false;
+                    resetBtn.disabled = false;
+                    
+                    updateStatus(`✅ Камера готова! Нажмите TIME WARP`);
+                    showNotification(`Камера ${facingMode === 'user' ? 'фронтальная' : 'основная'} включена`);
+                    
+                    updateCanvasSize();
+                    
+                    setTimeout(() => {
+                        drawVideoToCanvas();
+                    }, 100);
+                    
+                } catch (err) {
+                    console.error("Camera error:", err);
+                    let errorMsg = "❌ Ошибка доступа к камере. ";
+                    if (err.name === 'NotAllowedError') {
+                        errorMsg += "Разрешите доступ к камере в браузере.";
+                    } else if (err.name === 'NotFoundError') {
+                        errorMsg += "Камера не найдена.";
+                    } else {
+                        errorMsg += err.message;
+                    }
+                    updateStatus(errorMsg, true);
+                    captureBtn.disabled = true;
+                    resetBtn.disabled = true;
+                    isCameraReady = false;
+                }
+            }
+            
+            function saveImage() {
+                if (!lastCapturedImage) {
+                    showNotification("Нет сохранённого изображения", true);
+                    return;
+                }
+                try {
+                    const link = document.createElement('a');
+                    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                    link.download = `timewarp_${scanDirection}_${timestamp}.png`;
+                    link.href = lastCapturedImage;
+                    link.click();
+                    showNotification("Изображение сохранено!");
+                } catch(e) {
+                    showNotification("Ошибка сохранения", true);
+                }
+            }
+            
+            function resetScan() {
+                if (animationId) {
+                    cancelAnimationFrame(animationId);
+                    animationId = null;
+                }
+                isScanning = false;
+                isScanComplete = false;
+                currentLine = 0;
+                lastCapturedImage = null;
+                frozenBuffer = null;
+                scanIndicator.style.display = "none";
+                saveBtn.disabled = true;
+                updateStatus("✅ Режим сброшен");
+                drawVideoToCanvas();
+            }
+            
+            function startTimeWarpScan() {
+                if (isScanning) {
+                    updateStatus("⚠️ Сканирование уже идет");
+                    return;
+                }
+                
+                if (!isCameraReady || !videoElement || videoElement.readyState < 2 || videoElement.videoWidth === 0) {
+                    updateStatus("⚠️ Сначала включите камеру в настройках");
+                    return;
+                }
+                
+                updateCanvasSize();
+                
+                if (canvasWidth === 0 || canvasHeight === 0) {
+                    updateStatus("⚠️ Ошибка размеров экрана");
+                    return;
+                }
+                
+                updateParameters();
+                updateStatus(`🌀 СКАНИРОВАНИЕ... Направление: ${scanDirection === 'vertical' ? 'сверху вниз' : 'слева направо'}`);
+                scanIndicator.style.display = "block";
+                
+                const width = canvasWidth;
+                const height = canvasHeight;
+                const isVertical = scanDirection === 'vertical';
+                const maxPos = isVertical ? height : width;
+                
+                // Создаём буфер для замороженных строк/столбцов
+                frozenBuffer = ctx.createImageData(width, height);
+                for (let i = 0; i < frozenBuffer.data.length; i += 4) {
+                    frozenBuffer.data[i] = 0;
+                    frozenBuffer.data[i+1] = 0;
+                    frozenBuffer.data[i+2] = 0;
+                    frozenBuffer.data[i+3] = 255;
+                }
+                
+                currentLine = 0;
+                isScanning = true;
+                isScanComplete = false;
+                saveBtn.disabled = true;
+                
+                function scanFrame() {
+                    if (!isScanning) return;
+                    
+                    try {
+                        if (!videoElement || videoElement.readyState < 2 || videoElement.videoWidth === 0) {
+                            scanIndicator.style.display = "none";
+                            updateStatus("❌ Потерян видеопоток", true);
+                            isScanning = false;
+                            return;
+                        }
+                        
+                        const tempCanvas = document.createElement('canvas');
+                        tempCanvas.width = width;
+                        tempCanvas.height = height;
+                        const tempCtx = tempCanvas.getContext('2d');
+                        tempCtx.drawImage(videoElement, 0, 0, width, height);
+                        const currentFrame = tempCtx.getImageData(0, 0, width, height);
+                        
+                        const nextPos = Math.min(currentLine + scanSpeed, maxPos);
+                        
+                        if (isVertical) {
+                            // Вертикальное сканирование (сверху вниз)
+                            for (let row = currentLine; row < nextPos; row++) {
+                                const rowStartFrozen = row * width * 4;
+                                const rowStartFrame = row * width * 4;
+                                for (let col = 0; col < width; col++) {
+                                    const frozenPos = rowStartFrozen + col * 4;
+                                    const framePos = rowStartFrame + col * 4;
+                                    frozenBuffer.data[frozenPos] = currentFrame.data[framePos];
+                                    frozenBuffer.data[frozenPos+1] = currentFrame.data[framePos+1];
+                                    frozenBuffer.data[frozenPos+2] = currentFrame.data[framePos+2];
+                                    frozenBuffer.data[frozenPos+3] = 255;
+                                }
+                            }
+                        } else {
+                            // Горизонтальное сканирование (слева направо)
+                            for (let col = currentLine; col < nextPos; col++) {
+                                for (let row = 0; row < height; row++) {
+                                    const frozenPos = (row * width + col) * 4;
+                                    const framePos = (row * width + col) * 4;
+                                    frozenBuffer.data[frozenPos] = currentFrame.data[framePos];
+                                    frozenBuffer.data[frozenPos+1] = currentFrame.data[framePos+1];
+                                    frozenBuffer.data[frozenPos+2] = currentFrame.data[framePos+2];
+                                    frozenBuffer.data[frozenPos+3] = 255;
+                                }
+                            }
+                        }
+                        
+                        currentLine = nextPos;
+                        
+                        if (currentLine < maxPos) {
+                            if (isVertical) {
+                                // Вертикальное сканирование
+                                // Замороженная часть (выше линии)
+                                for (let row = 0; row < currentLine; row++) {
+                                    const srcStart = row * width * 4;
+                                    const rowData = frozenBuffer.data.slice(srcStart, srcStart + width * 4);
+                                    const imageData = new ImageData(new Uint8ClampedArray(rowData), width, 1);
+                                    ctx.putImageData(imageData, 0, row);
+                                }
+                                
+                                // Живая часть (ниже линии)
+                                for (let row = currentLine; row < height; row++) {
+                                    const srcStart = row * width * 4;
+                                    const rowData = currentFrame.data.slice(srcStart, srcStart + width * 4);
+                                    const imageData = new ImageData(new Uint8ClampedArray(rowData), width, 1);
+                                    ctx.putImageData(imageData, 0, row);
+                                }
+                                
+                                // Горизонтальная линия сканирования
+                                ctx.beginPath();
+                                ctx.moveTo(0, currentLine);
+                                ctx.lineTo(width, currentLine);
+                                ctx.strokeStyle = '#ff3366';
+                                ctx.lineWidth = 4;
+                                ctx.stroke();
+                                ctx.fillStyle = 'rgba(255, 51, 102, 0.2)';
+                                ctx.fillRect(0, currentLine - 3, width, 6);
+                            } else {
+                                // Горизонтальное сканирование
+                                // Замороженная часть (слева от линии)
+                                for (let col = 0; col < currentLine; col++) {
+                                    for (let row = 0; row < height; row++) {
+                                        const srcPos = (row * width + col) * 4;
+                                        const r = frozenBuffer.data[srcPos];
+                                        const g = frozenBuffer.data[srcPos+1];
+                                        const b = frozenBuffer.data[srcPos+2];
+                                        const a = frozenBuffer.data[srcPos+3];
+                                        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a/255})`;
+                                        ctx.fillRect(col, row, 1, 1);
+                                    }
+                                }
+                                
+                                // Живая часть (справа от линии)
+                                for (let col = currentLine; col < width; col++) {
+                                    for (let row = 0; row < height; row++) {
+                                        const srcPos = (row * width + col) * 4;
+                                        ctx.fillStyle = `rgba(${currentFrame.data[srcPos]}, ${currentFrame.data[srcPos+1]}, ${currentFrame.data[srcPos+2]}, ${currentFrame.data[srcPos+3]/255})`;
+                                        ctx.fillRect(col, row, 1, 1);
+                                    }
+                                }
+                                
+                                // Вертикальная линия сканирования
+                                ctx.beginPath();
+                                ctx.moveTo(currentLine, 0);
+                                ctx.lineTo(currentLine, height);
+                                ctx.strokeStyle = '#ff3366';
+                                ctx.lineWidth = 4;
+                                ctx.stroke();
+                                ctx.fillStyle = 'rgba(255, 51, 102, 0.2)';
+                                ctx.fillRect(currentLine - 3, 0, 6, height);
+                            }
+                            
+                            animationId = requestAnimationFrame(scanFrame);
+                        } else {
+                            // Сканирование завершено
+                            ctx.putImageData(frozenBuffer, 0, 0);
+                            isScanning = false;
+                            isScanComplete = true;
+                            animationId = null;
+                            scanIndicator.style.display = "none";
+                            
+                            try {
+                                lastCapturedImage = canvas.toDataURL('image/png');
+                                saveBtn.disabled = false;
+                                updateStatus("✅ Сканирование завершено! Нажмите СОХРАНИТЬ");
+                                showNotification("Сканирование завершено!");
+                            } catch(e) {
+                                updateStatus("✅ Сканирование завершено");
+                            }
+                        }
+                    } catch(e) {
+                        console.error("Scan error:", e);
+                        isScanning = false;
+                        animationId = null;
+                        scanIndicator.style.display = "none";
+                        updateStatus("❌ Ошибка сканирования", true);
+                    }
+                }
+                
+                if (animationId) cancelAnimationFrame(animationId);
+                scanFrame();
+            }
+            
+            function updateStatus(msg, isError = false) {
+                statusDiv.innerHTML = msg;
+                statusDiv.style.color = isError ? "#ff6b6b" : "#fff";
+            }
+            
+            function toggleSettings() {
+                settingsPanel.classList.toggle('open');
+            }
+            
+            // Обработчики
+            captureBtn.addEventListener('click', () => {
+                if (!isCameraReady) {
+                    updateStatus("⏳ Сначала включите камеру в настройках");
+                    return;
+                }
+                startTimeWarpScan();
+            });
+            
+            resetBtn.addEventListener('click', resetScan);
+            saveBtn.addEventListener('click', saveImage);
+            enableCameraFrontBtn.addEventListener('click', () => initCamera('user'));
+            enableCameraBackBtn.addEventListener('click', () => initCamera('environment'));
+            settingsToggle.addEventListener('click', toggleSettings);
+            
+            document.addEventListener('click', (e) => {
+                if (!settingsToggle.contains(e.target) && !settingsPanel.contains(e.target) && settingsPanel.classList.contains('open')) {
+                    settingsPanel.classList.remove('open');
+                }
+            });
+            
+            function handleResize() {
+                updateCanvasSize();
+                if (!isScanning && !isScanComplete && isCameraReady) {
+                    drawVideoToCanvas();
+                } else if (isScanComplete && lastCapturedImage) {
+                    const img = new Image();
+                    img.onload = () => ctx.drawImage(img, 0, 0, canvasWidth, canvasHeight);
+                    img.src = lastCapturedImage;
+                }
+            }
+            
+            window.addEventListener('resize', handleResize);
+            window.addEventListener('orientationchange', () => setTimeout(handleResize, 100));
+            
+            window.addEventListener('beforeunload', () => {
+                if (videoStream) {
+                    videoStream.getTracks().forEach(track => track.stop());
+                }
+                if (renderAnimationId) cancelAnimationFrame(renderAnimationId);
+                if (animationId) cancelAnimationFrame(animationId);
+            });
+            
+            // Инициализация
+            updateCanvasSize();
+            updateDisplayValues();
+            startRenderLoop();
+            
+            updateStatus("📱 Нажмите '⚙️' и выберите камеру");
+            
+            setInterval(() => {
+                if (!isScanning && !isScanComplete && (canvasWidth !== window.innerWidth || canvasHeight !== window.innerHeight)) {
+                    updateCanvasSize();
+                }
+            }, 500);
+        })();
+    </script>
+</body>
+</html>
